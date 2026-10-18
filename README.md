@@ -12,6 +12,9 @@ This proof of concept for **Johnson & Johnson** shows how to:
 | [docs/networking.md](docs/networking.md) | Architecture diagram, address plan, inbound and outbound traffic flows, what is public and private, and verification steps |
 | [docs/governance.md](docs/governance.md) | Four-layer governance model, M365 admin approval and audience scoping, Teams availability, monitoring, kill switches, and the demo script |
 | [docs/jnj-landing-zone.md](docs/jnj-landing-zone.md) | Mapping to JNJ's hub-spoke landing zone, central DNS, CI/CD, the security exception to approve, RACI, and the rollout path |
+| [docs/troubleshooting.md](docs/troubleshooting.md) | Issues found while building the POC, with evidence and fixes, including the required `?api-version=v1` on the bot endpoint, Teams availability, cold start, and the open M365 Copilot rendering issue |
+
+**Status:** The agent works end to end in **Microsoft Teams** from the private network. In **M365 Copilot**, messages reach the agent and answers are generated, but the final answer isn't rendered yet. See [troubleshooting](docs/troubleshooting.md#open-issue-m365-copilot-doesnt-render-the-final-answer).
 
 ## Architecture at a glance
 
@@ -75,7 +78,8 @@ Then complete the governance steps:
 
 1. Open the [M365 admin center Requests page](https://admin.cloud.microsoft/?#/agents/all/requested) and select **JNJ Azure Advisor** > **Publish to store**.
 2. Set the audience to `sg-jnj-azure-advisor-pilot`.
-3. In Teams, open **Apps** > **Built by your org** > **JNJ Azure Advisor** and ask a question.
+3. In the [Teams admin center](https://admin.teams.microsoft.com/), go to **Teams apps** > **Manage apps** > **JNJ Azure Advisor** > **Users and groups**, and add the same group.
+4. In Teams, open **Apps** > **Built by your org** > **JNJ Azure Advisor** and ask a question.
 
 See [docs/governance.md](docs/governance.md#demo-script-governance) for the full demo.
 

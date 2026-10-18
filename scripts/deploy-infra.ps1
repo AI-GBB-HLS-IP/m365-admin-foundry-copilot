@@ -140,6 +140,21 @@ foreach ($a in $assignments) {
     }
 }
 
+Write-Step 'Sending Foundry edge diagnostics (Audit, RequestResponse, Trace) to the POC workspace'
+# RequestResponse shows every call at the Foundry edge with caller IP and status. This is how you
+# see M365/Teams Activity Protocol calls (Teams source ranges 52.112.0.0/14, 52.122.0.0/15) and
+# any 403s from the public-network-access block.
+$diagLogs = Join-Path ([IO.Path]::GetTempPath()) "poc-diag-$([guid]::NewGuid()).json"
+'[{"category":"Audit","enabled":true},{"category":"RequestResponse","enabled":true},{"category":"Trace","enabled":true}]' |
+    Set-Content -Path $diagLogs -Encoding utf8
+try {
+    Invoke-Az monitor diagnostic-settings create --name 'to-poc-log-analytics' --resource $accountId `
+        --workspace $network.logAnalyticsWorkspaceId.value --logs "@$diagLogs" --output none | Out-Null
+}
+finally {
+    Remove-Item $diagLogs -Force -ErrorAction SilentlyContinue
+}
+
 $state = @{
     subscriptionId   = $SubscriptionId
     tenantId         = $tenantId

@@ -46,7 +46,9 @@ Write-Host "Agent identity client ID: $clientId"
 
 Write-Step 'Step 2: creating Azure Bot Service (public network access disabled, Teams channel)'
 $botName = "bot-$($state.agentName)-$($state.accountName)"
-$activityEndpoint = "$($state.projectEndpoint)/agents/$($state.agentName)/endpoint/protocols/activityProtocol"
+# api-version is required: without it the request doesn't match the source-IP-filtered Activity
+# route and is rejected by the account's public-network-access block (generic 403).
+$activityEndpoint = "$($state.projectEndpoint)/agents/$($state.agentName)/endpoint/protocols/activityProtocol?api-version=v1"
 $bot = Invoke-Az deployment group create --resource-group $state.resourceGroup --name 'poc-bot-service' `
     --template-file (Join-Path $script:RepoRoot 'infra/bot-service.bicep') `
     --parameters botName=$botName displayName=$AgentDisplayName msaAppId=$clientId tenantId=$($state.tenantId) endpoint=$activityEndpoint `

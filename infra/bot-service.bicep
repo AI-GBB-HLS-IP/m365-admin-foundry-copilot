@@ -10,7 +10,7 @@ param msaAppId string
 @description('Microsoft Entra tenant ID.')
 param tenantId string
 
-@description('https://<account>.services.ai.azure.com/api/projects/<project>/agents/<agent>/endpoint/protocols/activityProtocol')
+@description('https://<account>.services.ai.azure.com/api/projects/<project>/agents/<agent>/endpoint/protocols/activityProtocol?api-version=v1 (api-version is required for the private-network Activity route)')
 param endpoint string
 
 param botServiceSku string = 'F0'

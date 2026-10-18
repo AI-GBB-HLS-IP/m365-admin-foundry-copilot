@@ -63,8 +63,8 @@ All subnets set `defaultOutboundAccess: false`, so internet egress is available 
 ### 1. Teams / Microsoft 365 Copilot → agent (inbound)
 
 1. The user sends a message in Teams or Microsoft 365 Copilot.
-2. The channel adapter forwards it to the Azure Bot Service resource. Its messaging endpoint is the agent's Activity Protocol URL.
-3. Bot Service calls `https://<account>.services.ai.azure.com/api/projects/<project>/agents/<agent>/endpoint/protocols/activityProtocol` over the public internet.
+2. The channel adapter forwards it to the Azure Bot Service resource. Its messaging endpoint is the agent's Activity Protocol URL **including `?api-version=v1`**. Without the API version, the request doesn't match the filtered route and receives the account-wide 403. See [troubleshooting](troubleshooting.md#1-m365-or-teams-calls-blocked-with-a-generic-403-missing-api-version-on-the-bot-endpoint).
+3. The Teams and Copilot channel calls `https://<account>.services.ai.azure.com/api/projects/<project>/agents/<agent>/endpoint/protocols/activityProtocol?api-version=v1` over the public internet. This POC observed source IPs `52.112.x` and `52.123.x`.
 4. The Foundry edge accepts the request **only** if all of the following checks pass:
    - **Source IP:** The request originates from Azure Bot Service or Microsoft 365 source ranges. Foundry determines the IP at its edge, so forwarding headers can't spoof it, and it denies requests without a source IP.
    - **Token:** The signed Bot Framework channel token is valid for the agent's identity.

@@ -50,6 +50,8 @@ services:
       AZURE_AI_MODEL_DEPLOYMENT_NAME: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}
       TOOLBOX_NAME: learn-tools
     container:
+      # 1 CPU / 2Gi shortens cold start; M365/Teams surface "still processing" when the first
+      # reply of a new conversation (new session container) takes ~30s at 0.5 CPU.
       resources:
-        cpu: '0.5'
-        memory: 1Gi
+        cpu: '1'
+        memory: 2Gi

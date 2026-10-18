@@ -42,6 +42,17 @@ This POC publishes with **`Tenant`**, so the agent remains unavailable until an 
 6. Choose a policy template (default or custom), review permissions, and grant admin consent if appropriate.
 7. Select **Publish**.
 
+### Enable it in Teams (Teams admin center)
+
+Approving the agent in the M365 admin center doesn't necessarily make it available in **Teams**. Teams applies its own per-app availability through app-centric management, and many tenants set new custom apps to **No one** by default. If users see *"This app isn't part of your Teams"* and **Request access**, make these changes in the Teams admin center:
+
+1. Go to the [Teams admin center](https://admin.teams.microsoft.com/), then select **Teams apps** > **Manage apps** > **JNJ Azure Advisor**. Confirm that **Status** is *Allowed* and the app is *Published*.
+2. Select **Users and groups** > **Edit availability** > **Specific users or groups**, then add `sg-jnj-azure-advisor-pilot`.
+3. Under **Org-wide app settings**, confirm that custom apps are allowed.
+4. Approve any pending user requests for the app.
+
+Use the same security group in both admin centers so the M365 Copilot and Teams audiences match. A **security group** under **Teams & groups** > **Security groups** is the right type. You don't need a Microsoft 365 group or a Team.
+
 To reject the agent, select **Reject submission**. Later metadata updates, such as a new `appVersion`, appear as **Pending update**. Users continue to see the previously approved version until an admin selects **Update in store**.
 
 > Changing the agent's *code* or *model* creates a new Foundry agent version and doesn't require M365 re-approval. Control version promotion in Foundry (Layer 4); see [Update a published agent](https://learn.microsoft.com/azure/foundry/agents/how-to/publish-copilot#update-a-published-agent-in-m365teams).

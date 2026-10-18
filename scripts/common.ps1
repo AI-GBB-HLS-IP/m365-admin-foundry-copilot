@@ -108,7 +108,10 @@ $body
     }
 
     try {
-        & az @rcArgs 2>&1 | Out-Null
+        $createOut = & az @rcArgs 2>&1
+        if ($LASTEXITCODE -ne 0 -and ($createOut | Out-String) -match 'not running|deallocated') {
+            throw "Jumpbox $($State.jumpboxName) is not running. Start it with: az vm start -g $($State.resourceGroup) -n $($State.jumpboxName)"
+        }
         $view = Invoke-Az vm run-command show --resource-group $State.resourceGroup --vm-name $State.jumpboxName `
             --run-command-name $runName --instance-view --output json -Json
         $iv = $view.instanceView
