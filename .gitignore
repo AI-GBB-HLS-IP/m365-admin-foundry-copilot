@@ -1,0 +1,15 @@
+# Local deployment state (resource names, endpoints)
+.poc/
+
+# azd environments
+.azure/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.env
+
+# Generated publish artifacts
+appPackage.zip
+TEAMS_APP_SETUP.md
