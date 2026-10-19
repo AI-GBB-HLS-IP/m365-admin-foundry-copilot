@@ -128,5 +128,6 @@ infra/bot-service.bicep    Azure Bot Service for M365/Teams publishing
 infra/vpn.bicep            Optional P2S VPN (Entra ID) + DNS Private Resolver for laptop/portal access
 scripts/                   Workstation orchestration (PowerShell 7)
 scripts/jumpbox/           Scripts executed inside the VNet via Run Command
+tools/demo-video/          Showcase video builder (ffmpeg + Azure AI Speech voiceover + branding)
 docs/                      Networking, governance, and JNJ landing-zone guidance
 ```

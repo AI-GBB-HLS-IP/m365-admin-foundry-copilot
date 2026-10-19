@@ -1,0 +1,69 @@
+{
+  "voice": "en-US-AndrewMultilingualNeural",
+  "sources": {
+    "S1": "Scene1_Foundry_private network.webm",
+    "S2": "Scene2_VSCode.webm",
+    "S3": "Scene3_M365 Admin Center.webm",
+    "S4": "Scene4_Teams.webm"
+  },
+  "output": "JNJ_Foundry_Private_Agent_to_M365_Teams_POC.mp4",
+  "segments": [
+    {"id": "00_intro", "card": "intro",
+     "vo": "Private Microsoft Foundry agents, published to Microsoft 365 Copilot and Teams. A proof of concept for Johnson and Johnson."},
+
+    {"id": "01_blocked", "src": "S1", "pieces": [[0, 28, "flex"]],
+     "chip": ["foundry", "Microsoft Foundry"], "caption": "VPN disconnected  |  Public network access: Disabled",
+     "vo": "Here's our Microsoft Foundry project, opened from the public internet. Foundry won't load the agents. Public network access is disabled on this account, so its agent APIs only answer requests from inside the private network. Even with the right permissions, you can't reach this agent from outside."},
+
+    {"id": "02_vpn", "src": "S1", "pieces": [[30, 67, "flex"]],
+     "chip": ["vpn", "Azure VPN Gateway"], "caption": "Point-to-site VPN with Microsoft Entra ID sign-in",
+     "vo": "Now I connect to the private network with the Azure VPN client, signing in with Microsoft Entra ID. Private DNS resolves Foundry to its private endpoint, and the agent list loads."},
+
+    {"id": "03_agent", "src": "S1", "pieces": [[67, 124, "flex"]],
+     "chip": ["foundry", "Foundry Agent Service"], "caption": "Hosted agent  |  Microsoft Agent Framework  |  Microsoft Learn MCP tool",
+     "vo": "This is J N J Azure Advisor, a hosted agent built with Microsoft Agent Framework. Its compute is injected into the company's virtual network, and its threads, files, and indexes live in customer-owned Cosmos DB, Storage, and AI Search, all behind private endpoints. It answers Azure, Foundry, and Microsoft 365 questions using the Microsoft Learn MCP server, through a Foundry toolbox. Let's ask it how to publish a Foundry agent to Microsoft 365 Copilot from a private network."},
+
+    {"id": "04_answer", "src": "S1", "pieces": [[124, 154, 8.0], [154, 170, 1.0]],
+     "chip": ["firewall", "Azure Firewall"], "caption": "Tool calls leave only through Azure Firewall to approved domains",
+     "vo": "The agent searches Microsoft Learn through MCP. Those outbound calls pass through Azure Firewall, which only allows approved domains. A few seconds later, it returns a grounded, step-by-step answer with sources."},
+
+    {"id": "05_publish_script", "src": "S2", "pieces": [[30, 44, 1.0], [44, 133, "flex"]],
+     "chip": ["vscode-logo", "Visual Studio Code"], "caption": "Private publish: identity > Bot Service > filtered Activity route > publish",
+     "vo": "Next, we want a wider audience, so we publish the agent to Microsoft 365 Copilot and Teams without opening the network. This script does it in four steps. Because the project rejects public callers, the steps that talk to Foundry run on a machine inside the network, through Azure Run Command. First, it reads the agent's Microsoft Entra identity. Second, it creates an Azure Bot Service resource, with public network access disabled, to relay Teams and Copilot traffic. Third, it turns on one narrow exception: the agent's Activity Protocol route, which Microsoft 365 uses to deliver messages. Foundry only accepts that route from Microsoft 365 and Bot Service addresses, and every request must still pass token and tenant checks. All other Foundry APIs stay private. Fourth, it calls the Microsoft 365 publish API."},
+
+    {"id": "06_scopes", "src": "S2", "pieces": [[140, 200, "flex"]], "overlay": "scopes",
+     "chip": ["bot", "Publishing scopes"], "caption": "Shared = developer testing  |  Tenant = admin-approved organization rollout",
+     "vo": "There are two publishing scopes. Shared publishes to you only, with no admin approval, and anyone you share it with also needs Azure role-based access on the Foundry project. Tenant submits the agent for Microsoft 365 admin approval, and the admin decides which users or groups receive it. Shared is great for testing and proofs of concept, so let's walk through the organization-wide path."},
+
+    {"id": "07_requests", "src": "S3", "pieces": [[15, 43, "flex"]],
+     "chip": ["microsoft", "Microsoft 365 admin center"], "caption": "Agents > All agents > Requests: Pending review",
+     "vo": "Because we published with Tenant scope, the agent arrives in the Microsoft 365 admin center, under Agents, in the Requests tab, waiting for admin review."},
+
+    {"id": "08_audience", "src": "S3", "pieces": [[43, 118, "flex"]],
+     "chip": ["microsoft", "Microsoft 365 admin center"], "caption": "Choose all users, specific users, or Entra security groups",
+     "vo": "The admin reviews the agent's details, then selects Publish to store. This is where the admin decides who gets it: everyone in the organization, specific people, or Microsoft Entra security groups. We'll choose our pilot group, so access, and how many people have it, comes down to that group's membership. The admin can also choose to pre-install it."},
+
+    {"id": "09_publish", "src": "S3", "pieces": [[118, 171, "flex"]],
+     "chip": ["microsoft", "Microsoft 365 admin center"], "caption": "Policy template  |  Permissions  |  Publish",
+     "vo": "Next, the admin applies a policy template, reviews the requested permissions, and publishes the agent to the selected group."},
+
+    {"id": "10_registry", "src": "S3", "pieces": [[171, 213, "flex"]],
+     "chip": ["microsoft", "Microsoft 365 admin center"], "caption": "Agent Registry: change audience, install, or block",
+     "vo": "The agent now appears in the Agent Registry. From here, admins can change its audience, install it for more people, or block it with one click."},
+
+    {"id": "11_teams_admin", "src": "S4", "pieces": [[22, 63, "flex"]],
+     "chip": ["teams", "Teams admin center"], "caption": "Teams apps > Manage apps > Users and groups",
+     "vo": "In Teams, app availability is managed in the Teams admin center. The Teams admin can make the agent available to everyone, to specific users or groups, or to no one, and review its permissions and user requests."},
+
+    {"id": "12_teams_chat", "src": "S4", "pieces": [[63, 96, "flex"], [96, 126, 8.0], [126, 138, 1.0]],
+     "chip": ["teams", "Microsoft Teams"], "caption": "Same private agent, now answering in Teams",
+     "vo": "Users in the pilot group find the agent under Built for your org and start a chat. I'll ask the same question. The message travels from Teams through Bot Service to the agent's filtered Activity route. The agent runs inside the private network, calls Microsoft Learn through MCP, and replies right here in Teams."},
+
+    {"id": "13_copilot", "src": "S4", "pieces": [[144, 162.5, "flex"]],
+     "chip": ["microsoft", "Microsoft 365 Copilot"], "caption": "Microsoft 365 Copilot > Agent Store",
+     "vo": "The same approval also publishes the agent to Microsoft 365 Copilot. Users in the pilot group find it in the Agent Store and add it with one click."},
+
+    {"id": "14_outro", "card": "outro",
+     "vo": "To recap: the agent, its data, and its tools stay in a private network, with outbound calls limited by the firewall. One filtered route connects it to Microsoft 365, and IT controls who can use it, with admin approval and group-based access in Copilot and Teams. Everything you saw is in the repository."}
+  ]
+}

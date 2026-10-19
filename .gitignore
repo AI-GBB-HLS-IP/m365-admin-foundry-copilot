@@ -13,3 +13,13 @@ __pycache__/
 # Generated publish artifacts
 appPackage.zip
 TEAMS_APP_SETUP.md
+
+# Demo video builder: recordings, audio, brand assets, and renders stay local
+tools/demo-video/assets/
+tools/demo-video/vo/
+tools/demo-video/vo_wav/
+tools/demo-video/gfx/
+tools/demo-video/segs/
+tools/demo-video/timeline.txt
+*.mp4
+*.webm

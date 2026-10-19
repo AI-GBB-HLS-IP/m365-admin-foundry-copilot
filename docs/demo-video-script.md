@@ -200,6 +200,8 @@ Follow Microsoft brand guidelines: don't recolor, stretch, or crop logos, and ke
 
 ## Clipchamp assembly
 
+> **Automated alternative:** [tools/demo-video](../tools/demo-video/README.md) builds the finished video from your scene recordings with ffmpeg. It adds an Azure AI Speech voiceover, product chips and captions, title and recap cards, and speeds up wait time. Its `plan.json` contains the narration written to match the recordings, which replaces the scene narration above.
+
 1. **Project:** Create a new video with a 16:9 (1920×1080) aspect ratio and import the seven scene recordings.
 2. **Voiceover:** Select **Record & create** > **Text to speech**. Create **one clip per scene**: paste that scene's narration, choose one voice for all clips (a natural neural voice, such as one of the newer US English voices), and keep the speed at 1.0×. Name the clips `VO-1` through `VO-7`.
 3. **Timeline:** Put the video clips on track 1, voiceover on track 2, and logos and captions on track 3.
