@@ -13,6 +13,8 @@
   to the jumpbox as an encrypted Run Command protected parameter.
 #>
 param(
+    # Defaults to the POC hosted agent; pass another agent in the same project to publish it.
+    [string] $AgentName = '',
     [ValidateSet('Tenant', 'Shared')] [string] $PublishScope = 'Tenant',
     [string] $AppVersion = '1.0.0',
     [string] $AgentDisplayName = 'JNJ Azure Advisor',
@@ -27,6 +29,8 @@ param(
 . (Join-Path $PSScriptRoot 'common.ps1')
 $state = Get-PocState
 Invoke-Az account set --subscription $state.subscriptionId | Out-Null
+$isMainAgent = [string]::IsNullOrEmpty($AgentName) -or $AgentName -eq $state.agentName
+if ([string]::IsNullOrEmpty($AgentName)) { $AgentName = $state.agentName }
 
 function Get-UserToken {
     (Invoke-Az account get-access-token --resource https://ai.azure.com --query accessToken --output tsv).Trim()
@@ -34,7 +38,7 @@ function Get-UserToken {
 
 $baseEnv = @{
     AZURE_AI_PROJECT_ENDPOINT = $state.projectEndpoint
-    AGENT_NAME                = $state.agentName
+    AGENT_NAME                = $AgentName
 }
 
 Write-Step 'Step 1: reading agent identity from the private project endpoint'
@@ -45,11 +49,11 @@ if (-not $clientId) { throw 'Could not read instance_identity.client_id for the 
 Write-Host "Agent identity client ID: $clientId"
 
 Write-Step 'Step 2: creating Azure Bot Service (public network access disabled, Teams channel)'
-$botName = "bot-$($state.agentName)-$($state.accountName)"
+$botName = "bot-$AgentName-$($state.accountName)"
 # api-version is required: without it the request doesn't match the source-IP-filtered Activity
 # route and is rejected by the account's public-network-access block (generic 403).
-$activityEndpoint = "$($state.projectEndpoint)/agents/$($state.agentName)/endpoint/protocols/activityProtocol?api-version=v1"
-$bot = Invoke-Az deployment group create --resource-group $state.resourceGroup --name 'poc-bot-service' `
+$activityEndpoint = "$($state.projectEndpoint)/agents/$AgentName/endpoint/protocols/activityProtocol?api-version=v1"
+$bot = Invoke-Az deployment group create --resource-group $state.resourceGroup --name "poc-bot-$AgentName" `
     --template-file (Join-Path $script:RepoRoot 'infra/bot-service.bicep') `
     --parameters botName=$botName displayName=$AgentDisplayName msaAppId=$clientId tenantId=$($state.tenantId) endpoint=$activityEndpoint `
     --query properties.outputs --output json -Json
@@ -72,11 +76,13 @@ $publishEnv = $baseEnv + @{
 Invoke-JumpboxScript -State $state -ScriptPath (Join-Path $PSScriptRoot 'jumpbox/publish-agent.sh') `
     -Environment $publishEnv -ProtectedEnvironment @{ USER_TOKEN = (Get-UserToken) } | Out-Null
 
-$state.botServiceId = $botId
-$state.botName = $botName
-$state.publishScope = $PublishScope
-$state.appVersion = $AppVersion
-Save-PocState $state
+if ($isMainAgent) {
+    $state.botServiceId = $botId
+    $state.botName = $botName
+    $state.publishScope = $PublishScope
+    $state.appVersion = $AppVersion
+    Save-PocState $state
+}
 
 if ($PublishScope -eq 'Tenant') {
     Write-Step 'Next: approve the agent in the Microsoft 365 admin center'

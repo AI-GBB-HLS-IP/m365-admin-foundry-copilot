@@ -83,5 +83,27 @@ AzureDiagnostics
 
 Because the same agent, Bot Service, and Activity route work in Teams, the remaining gap is in the M365 Copilot channel's delivery or rendering for this agent, not in the private network. Next steps:
 
-1. Retry in a brand-new Copilot chat now that the endpoint fix has propagated. Compare the *Copilot in Teams* experience with *M365 Copilot app/web*.
-2. If the issue persists, open a support case with Foundry Agent Service publishing. Include the `RequestResponse` correlation IDs, the App Insights `x-request-id` for the matching `/responses` call, and the Copilot `ConversationId`. The Learn troubleshooting page lists these values for support.
+### Isolation test (2026-10-19)
+
+| Agent | Teams | M365 Copilot |
+|---|---|---|
+| `jnj-azure-advisor`: hosted agent, Agent Framework, Learn MCP toolbox | ✅ Answers | ❌ Shows the agent name or icon with an empty body |
+| `jnj-prompt-test`: prompt agent with no container or tools, published with `Shared` scope | n/a | ❌ Same empty reply |
+
+In both cases, Foundry accepts Copilot's calls (`Projects_Wildcard_Post` **202** from `52.112.x`). The hosted agent's traces show the full answer generated in 12–22 seconds, and a warm follow-up in the same chat also doesn't render. **The issue doesn't depend on agent type, agent code, tools, or latency.** It's in how M365 Copilot handles replies from Foundry agents published through the private-network Activity route, while Teams handles them correctly.
+
+`jnj-prompt-test` (bot `bot-jnj-prompt-test-jnjm365fdylfzg`, Teams app ID `256c38af-4bc5-4b95-bdad-d13532f63fbb`) is kept as the **minimal reproduction** for the support case. Remove it when the case is closed:
+
+```powershell
+az resource delete --ids /subscriptions/<sub>/resourceGroups/rg-jnj-foundry-m365-poc/providers/Microsoft.BotService/botServices/bot-jnj-prompt-test-jnjm365fdylfzg
+# then DELETE {project_endpoint}/agents/jnj-prompt-test?api-version=v1 from inside the VNet
+```
+
+Next steps:
+
+1. Open a support case with Foundry Agent Service publishing, using `jnj-prompt-test` as the minimal reproduction. Include:
+   - The `RequestResponse` correlation IDs, such as `ce0c2537-1e17-49ad-8c96-351fc1f93a2d` and `5ca492fa-3ad7-4348-b39b-b1c2356299b6`
+   - The App Insights `x-request-id` for the hosted agent, such as `f964765df05f4c670930fe4586a2d164`
+   - The Copilot `ConversationId`
+   - Context: the project has public network access disabled, `enable_m365_public_endpoint` is set to `true`, Teams works, and Copilot shows an empty reply
+2. Until the case is resolved, use **Teams**, or **Copilot in Teams**, for the JNJ demo.
