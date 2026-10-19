@@ -13,6 +13,7 @@ This proof of concept for **Johnson & Johnson** shows how to:
 | [docs/governance.md](docs/governance.md) | Four-layer governance model, M365 admin approval and audience scoping, Teams availability, monitoring, kill switches, and the demo script |
 | [docs/jnj-landing-zone.md](docs/jnj-landing-zone.md) | Mapping to JNJ's hub-spoke landing zone, central DNS, CI/CD, the security exception to approve, RACI, and the rollout path |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Issues found while building the POC, with evidence and fixes, including the required `?api-version=v1` on the bot endpoint, Teams availability, cold start, and the open M365 Copilot rendering issue |
+| [docs/demo-video-script.md](docs/demo-video-script.md) | Shot-by-shot recording guide and AI voiceover script for a showcase video, plus Clipchamp assembly steps |
 
 **Status:** The agent works end to end in **Microsoft Teams** from the private network. In **M365 Copilot**, every message reaches the agent and an answer is generated, but Copilot shows an empty reply. An isolation test with a minimal prompt agent showed the same behavior, so the issue is in the M365 Copilot channel path for private-network Foundry agents, not in this agent. See [troubleshooting](docs/troubleshooting.md#open-issue-m365-copilot-doesnt-render-the-final-answer).
 
