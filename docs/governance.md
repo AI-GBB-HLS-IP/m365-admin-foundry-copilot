@@ -68,6 +68,8 @@ To reject the agent, select **Reject submission**. Later metadata updates, such 
 | Default for every new org-built agent | In the Teams admin center, set new custom apps to **No one** or an admin group by default so nothing reaches users before review. |
 | Hard technical gate for very small pilots | Publish with `Shared` (`BotServiceRbac`). Only users with Foundry User on the project can call the agent, regardless of what the store shows. |
 | Inventory and audit | **Agent Registry** > **Export** creates a CSV of every agent, publisher type, channel, and owner. The **Agents without owners** count helps identify orphaned agents. |
+| Throttle how much an agent is used (Option 2) | The APIM `rate-limit` policy per agent route defaults to 120 calls per minute. Set it with `callsPerMinute` in [apim-agent-route.bicep](../infra/apim-agent-route.bicep). Add `quota-by-key` keyed on the caller's `aadObjectId` for per-user quotas. |
+| Test without pre-installing | During pilots, use **Available to** a group rather than **Installed for**. Pre-installed apps can't be removed by users, so it's harder to reset a broken conversation. See [troubleshooting](troubleshooting.md#7-tenant-scope-agent-through-apim-never-receives-chat-messages). |
 
 ## Layer 4: Operate, monitor, and stop
 
@@ -84,6 +86,15 @@ To reject the agent, select **Reject submission**. Later metadata updates, such 
 | Tool egress (allowed or denied destinations) | Azure Firewall logs in `log-jnjm365-net`. See the KQL in [networking.md](networking.md). |
 | Who changed or published what | Azure Activity Log for ARM changes, such as the Bot Service. Use Foundry diagnostic logs for data-plane operations. |
 | M365 adoption and inventory | M365 admin center **Agents** pages and Registry export |
+| Every Microsoft 365 call, with caller IP, status, and latency (Option 2) | `ApiManagementGatewayLogs` in `log-jnjm365-net`. See the query below. |
+
+```kusto
+// Option 2: Microsoft 365 traffic per agent through APIM
+ApiManagementGatewayLogs
+| where TimeGenerated > ago(24h) and OperationId != ""
+| summarize calls = count(), rejected = countif(ResponseCode == 401), throttled = countif(ResponseCode == 429),
+            p95ms = percentile(TotalTime, 95) by agent = OperationId
+```
 
 ### Kill switches (fastest first)
 
@@ -92,6 +103,7 @@ To reject the agent, select **Reject submission**. Later metadata updates, such 
 | **Block** the agent | Prevents all users in the tenant from using it | M365 admin center > Agent Registry |
 | **Stop** the agent | Stops the underlying Azure infrastructure for the Foundry agent | M365 admin center > Agent Registry (Foundry agents) |
 | Set Teams availability to **No one** | Removes the agent from Teams | Teams admin center |
+| Disable the agent's APIM route (Option 2) | Delete the operation, or add `<return-response><set-status code="503" /></return-response>` to its policy. This takes effect in seconds, affects that agent only, and is owned by the platform team. | Azure portal or ARM on APIM |
 | Disable the public Activity route | PATCH `enable_m365_public_endpoint: false` or remove the Bot Service authorization scheme. Teams and Copilot traffic is then rejected at the Foundry edge. | Foundry REST from inside the VNet |
 | Remove the tool's FQDN | The agent can no longer reach the MCP server. | Azure Firewall policy |
 | Delete the agent from the store | Removes it, with a 30-day recovery window | M365 admin center |

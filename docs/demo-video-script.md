@@ -82,7 +82,7 @@ Shot-by-shot recording guide and AI voiceover script for the JNJ POC showcase. T
 **Record:**
 1. In VS Code, show the repository tree: `infra/`, `agent/`, `scripts/`, `docs/`.
 2. Open `scripts/publish-agent.ps1`. Scroll slowly past the comments for steps 1–4.
-3. Open `scripts/jumpbox/publish-agent.sh`. Highlight the `enable_m365_public_endpoint: true` patch and the `microsoft365/publish` call.
+3. Open `scripts/jumpbox/publish-agent.sh`. Highlight the `enable_m365_public_endpoint` patch (`true` for Option 1, direct) and the `microsoft365/publish` call.
 4. Optional: open `infra/bot-service.bicep` and highlight `publicNetworkAccess: 'Disabled'` and the endpoint containing `?api-version=v1`.
 5. Show the Tenant vs. Shared comparison card. Make it in Clipchamp, or show the table in `docs/governance.md`.
 
@@ -103,6 +103,24 @@ Shot-by-shot recording guide and AI voiceover script for the JNJ POC showcase. T
 | Visible to the publisher, shared by link | Admin assigns users, groups, or everyone |
 | Callers need Foundry RBAC on the project (`BotServiceRbac`) | Any tenant user who has the app (`BotServiceTenant`) |
 | Dev, test, and small pilots | Organization-wide rollout |
+
+---
+
+## Scene 3b (optional): Option 2, through Azure API Management, about 60 seconds
+
+**Logo cues:** Azure API Management, Visual Studio Code
+
+**Record:**
+1. In VS Code, open `infra/apim-agent-route.bicep` and highlight `validate-jwt` (audience = agent client ID), `rate-limit`, and the `rewrite-uri` to `activityProtocol?api-version=v1`.
+2. Show the command `./scripts/publish-agent.ps1 -AgentName jnj-advisor-apim-tenant -Ingress Apim -PublishScope Tenant`.
+3. In the Azure portal, open **apim-jnjm365** > **APIs** > **m365-agents** and show one operation per agent.
+4. In Teams, ask **JNJ Azure Advisor - APIM** a question.
+5. In Log Analytics, run the `ApiManagementGatewayLogs` query from `docs/governance.md`. Then show Foundry `AzureDiagnostics` with the caller `10.50.4.x` (the APIM subnet).
+
+**Caption:** "Option 2: Foundry has no public route at all. JNJ's API gateway is the front door."
+
+**Narration:**
+> Some security teams don't want any public route on the AI platform, not even a filtered one. For them, there's a second option. The Bot Service endpoint points at Azure API Management, which runs inside the same virtual network. APIM checks that every request carries a valid Bot Framework token issued for this specific agent, applies a rate limit, logs the call, and forwards it to Foundry over the private endpoint. The Foundry public route stays switched off. Publishing and admin approval are exactly the same; only the front door changes. And because each agent is just one more APIM operation, the platform team can throttle or switch off any agent in seconds.
 
 ---
 

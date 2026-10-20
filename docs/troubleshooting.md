@@ -7,7 +7,7 @@ These are real issues from building this POC, with the evidence used to diagnose
 | Surface | Result |
 |---|---|
 | Responses API from inside the VNet | ✅ Works; MCP tool calls succeed |
-| **Microsoft Teams** | ✅ **Works end to end** after the fixes below |
+| **Microsoft Teams** | ✅ **Works end to end** after the fixes below, through both Option 1 (direct) and Option 2 (APIM) |
 | Microsoft 365 Copilot | ⚠️ Messages reach the agent and answers are generated, but Copilot doesn't render the final answer. See [Open issue](#open-issue-m365-copilot-doesnt-render-the-final-answer). |
 
 ## 1. M365 or Teams calls blocked with a generic 403: missing `api-version` on the bot endpoint
@@ -70,6 +70,27 @@ AzureDiagnostics
 - **AI Search Standard:** The deployment returned `InsufficientResourcesAvailable`. Bring a Search service from Central US with `deploy-infra.ps1 -AiSearchResourceId`; its private endpoint still lives in the East US 2 VNet.
 - **VM sizes:** The deployment returned `SkuNotAvailable` for `Standard_D2s_v5`. The jumpbox now uses `Standard_D2s_v7` with NVMe.
 - **VPN Gateway:** Zone-redundant gateways repeatedly returned `VmssGatewayDeploymentFailed`. The gateway now lives in a peered **hub VNet in Central US**, matching the JNJ hub-spoke pattern.
+
+## 7. Tenant-scope agent through APIM never receives chat messages
+
+**Symptom:** The first Option 2 agent, *JNJ Azure Advisor (via APIM)*, was approved and **pre-installed** for the pilot group. In Teams it never replied.
+
+**Evidence:**
+
+- `ApiManagementGatewayLogs` showed only the two install-time POSTs, which passed `validate-jwt` with backend 202. No chat message ever reached APIM, including messages sent from a new 1:1 chat opened with `https://teams.microsoft.com/l/chat/0/0?users=28:<client-id>`.
+- The Bot Service resource, the Teams manifest `botId`, and the agent identity all matched. Kai was in the pilot group.
+- Changing the APIM backend `api-version` and toggling `enable_m365_public_endpoint` made no difference, because nothing was being delivered.
+- In parallel, a **Shared-scope** copy (`jnj-azure-advisor-apim2`) using the same APIM, the same policy, and `api-version=v1` answered through APIM. That ruled out the network path.
+
+**Fix:** A clean reset. Delete the agent in the M365 admin center, then publish a **new** agent (`jnj-advisor-apim-tenant`) with Tenant scope through APIM. Approve it for the group as **Available to**, not **Installed for**, and enable it in the Teams admin center. It answered on the first message: Teams → APIM 202 → Foundry `10.50.4.x` 202 → `create_response` 200.
+
+**Lessons:**
+
+- Point the bot at APIM **before** the first Tenant publish and approval.
+- Don't pre-install during testing; users can't remove a pre-installed app to reset it.
+- If a Tenant-scope agent never receives messages, republish it under a new agent name rather than over a deleted M365 title.
+
+**Noise to expect:** The public APIM gateway is probed by internet scanners. These requests show up as `404` with an empty `OperationId` in `ApiManagementGatewayLogs` and never reach Foundry. Filter on `OperationId != ""` to see real Microsoft 365 traffic.
 
 ## Open issue: M365 Copilot doesn't render the final answer
 

@@ -25,6 +25,18 @@ Everything in the design is private **except the Activity Protocol route** that 
 
 A useful framing is: **"Inbound from Microsoft 365 is a service-to-service exception scoped to one route; all agent egress and data access remain private and firewall-governed."**
 
+### Or remove the exception: Option 2 (APIM front door)
+
+If JNJ policy doesn't allow *any* public route on a PaaS data plane, use [Option 2](networking.md#option-2-teams--microsoft-365--apim--agent-inbound). Set `enable_m365_public_endpoint=false` and point each agent's Bot Service at **JNJ's existing API Management platform**. APIM reaches the Activity route over the Foundry private endpoint. The exception then becomes a standard gateway decision that JNJ already governs:
+
+| Landing zone fit | Guidance |
+|---|---|
+| Where APIM lives | Use the shared APIM instance (Premium or Standard v2 with VNet integration) in the hub or an integration spoke. Give it line of sight to the Foundry private endpoint through peering and central private DNS. Application Gateway WAF in front is optional. |
+| Onboarding a new agent | One operation per agent from [apim-agent-route.bicep](../infra/apim-agent-route.bicep), with the JWT audience set to the agent identity and its own rate limit. Ship it through APIOps in the same pipeline that publishes the agent: `publish-agent.ps1 -Ingress Apim`. |
+| Ownership | The API platform team owns the gateway policies; the AI platform team owns the agent and the request to M365. |
+| Same governance in M365 | Tenant scope, admin approval, audience groups, and Teams availability are unchanged. |
+| AWS or other gateways | Cloud gateways outside Azure have no private path to the Foundry private endpoint. They fit as **outbound** targets (an MCP tool behind the firewall), not as the Microsoft 365 ingress. |
+
 ## Data handling to review with compliance
 
 - When agents are published, Microsoft 365 and Teams process and store publishing metadata and conversation content under **Microsoft 365** terms, compliance commitments, and data residency. Agent state stays in JNJ-owned Cosmos DB, Storage, and AI Search. See the warning in the [publishing docs](https://learn.microsoft.com/azure/foundry/agents/how-to/publish-copilot).
@@ -42,6 +54,7 @@ A useful framing is: **"Inbound from Microsoft 365 is a service-to-service excep
 | Tenant-scope approval and audience groups | Requests | | Consulted | **Owns** | Approves |
 | Teams availability, pinning, block or stop | | | | **Owns** | Consulted |
 | Monitoring, incidents, kill switch | **Owns** | Consulted | Consulted | Executes block | Informed |
+| APIM routes, JWT and rate-limit policies (Option 2) | Requests | **Owns** (API platform) | Approves | | |
 
 ## Rollout path
 

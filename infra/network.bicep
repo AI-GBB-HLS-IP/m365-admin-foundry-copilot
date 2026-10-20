@@ -13,6 +13,7 @@
     AzureFirewallSubnet            10.50.3.0/26   Azure Firewall Basic (data plane)
     AzureFirewallManagementSubnet  10.50.3.64/26  Azure Firewall Basic (management plane, required by Basic)
     dns-inbound-subnet             10.50.3.160/28 DNS Private Resolver inbound endpoint (infra/vpn.bicep)
+    apim-subnet                    10.50.4.0/27   API Management, External VNet mode (infra/apim.bicep, Option 2 ingress)
 
   infra/vpn.bicep adds a peered hub VNet (10.60.0.0/24) with the P2S VPN gateway. Re-run
   scripts/setup-vpn.ps1 after redeploying this template so the spoke peering is restored.
@@ -31,6 +32,7 @@ param jumpboxSubnetPrefix string = '10.50.2.0/27'
 param firewallSubnetPrefix string = '10.50.3.0/26'
 param firewallManagementSubnetPrefix string = '10.50.3.64/26'
 param dnsInboundSubnetPrefix string = '10.50.3.160/28'
+param apimSubnetPrefix string = '10.50.4.0/27'
 
 @description('FQDNs the hosted-agent subnet may reach over HTTPS. Everything else is denied by the firewall.')
 param agentAllowedFqdns array = [
@@ -125,6 +127,38 @@ resource jumpboxNsg 'Microsoft.Network/networkSecurityGroups@2024-05-01' = {
         }
       }
     ]
+  }
+}
+
+var apimNsgRules = [
+  { name: 'AllowGatewayHttpsInbound', priority: 100, direction: 'Inbound', source: 'Internet', destination: 'VirtualNetwork', ports: ['443'] }
+  { name: 'AllowApimManagementInbound', priority: 110, direction: 'Inbound', source: 'ApiManagement', destination: 'VirtualNetwork', ports: ['3443'] }
+  { name: 'AllowAzureLoadBalancerInbound', priority: 120, direction: 'Inbound', source: 'AzureLoadBalancer', destination: 'VirtualNetwork', ports: ['6390'] }
+  { name: 'AllowStorageOutbound', priority: 100, direction: 'Outbound', source: 'VirtualNetwork', destination: 'Storage', ports: ['443'] }
+  { name: 'AllowSqlOutbound', priority: 110, direction: 'Outbound', source: 'VirtualNetwork', destination: 'Sql', ports: ['1433'] }
+  { name: 'AllowKeyVaultOutbound', priority: 120, direction: 'Outbound', source: 'VirtualNetwork', destination: 'AzureKeyVault', ports: ['443'] }
+  { name: 'AllowMonitorOutbound', priority: 130, direction: 'Outbound', source: 'VirtualNetwork', destination: 'AzureMonitor', ports: ['1886', '443'] }
+]
+
+// Required rules for API Management (stv2) in External VNet mode.
+resource apimNsg 'Microsoft.Network/networkSecurityGroups@2024-05-01' = {
+  name: 'nsg-${namePrefix}-apim'
+  location: location
+  tags: tags
+  properties: {
+    securityRules: [for r in apimNsgRules: {
+      name: r.name
+      properties: {
+        priority: r.priority
+        direction: r.direction
+        access: 'Allow'
+        protocol: 'Tcp'
+        sourceAddressPrefix: r.source
+        sourcePortRange: '*'
+        destinationAddressPrefix: r.destination
+        destinationPortRanges: r.ports
+      }
+    }]
   }
 }
 
@@ -233,6 +267,16 @@ resource vnet 'Microsoft.Network/virtualNetworks@2024-05-01' = {
               }
             }
           ]
+        }
+      }
+      // Option 2 ingress (infra/apim.bicep): API Management in External VNet mode.
+      {
+        name: 'apim-subnet'
+        properties: {
+          addressPrefix: apimSubnetPrefix
+          networkSecurityGroup: {
+            id: apimNsg.id
+          }
         }
       }
     ]

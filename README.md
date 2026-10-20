@@ -7,6 +7,22 @@ This proof of concept for **Johnson & Johnson** shows how to:
 3. **Publish the agent to Microsoft 365 Copilot and Teams** while the Foundry project keeps public network access disabled.
 4. **Govern** the agent by controlling who can publish it, who approves it, who can use it, how many people can use it, and how to stop it.
 
+### Two ingress options for Microsoft 365 and Teams
+
+Both options use the same private Foundry project, the same Tenant-scope publishing, and the same M365 admin approval. They differ only in where Microsoft 365 traffic enters.
+
+| | Option 1: Direct to Foundry (default) | Option 2: Through Azure API Management |
+|---|---|---|
+| Bot Service messaging endpoint | Foundry Activity route `.../activityProtocol?api-version=v1` | `https://<apim>.azure-api.net/m365/<agent>/activity` |
+| Foundry `enable_m365_public_endpoint` | `true`: the service-managed, source-IP-filtered public route | `false`: **every Foundry API stays private** |
+| Public entry point | Foundry service edge (Microsoft-managed) | APIM gateway in the customer VNet (customer-managed) |
+| Customer-owned controls | Bot Service, M365 approval | Plus APIM `validate-jwt`, per-agent rate limits, gateway logs, and a per-agent kill switch |
+| Extra cost and effort | None | APIM (Developer about $50 per month for the POC; Premium for production), about 45 minutes to deploy |
+| Publish command | `publish-agent.ps1` | `deploy-apim.ps1` once, then `publish-agent.ps1 -Ingress Apim` |
+| POC agent | **JNJ Azure Advisor** (hosted agent) | **JNJ Azure Advisor - APIM** (`jnj-advisor-apim-tenant`) |
+
+Both options were tested end to end in Teams. See [docs/networking.md](docs/networking.md#option-2-teams--microsoft-365--apim--agent-inbound) for how to choose.
+
 | Document | Contents |
 |---|---|
 | [docs/networking.md](docs/networking.md) | Architecture diagram, address plan, inbound and outbound traffic flows, what is public and private, and verification steps |
@@ -41,6 +57,7 @@ Resource group: `rg-jnj-foundry-m365-poc` in **East US 2**
 | Foundry Standard Agent Setup | Foundry account with public network access disabled and agent subnet injection; project; `gpt-5.4-mini`; Cosmos DB; AI Search; Storage; Application Insights with AMPLS; private endpoints; private DNS zones; capability host. AI Search is BYO in Central US because East US 2 lacked Standard capacity. Use `deploy-infra.ps1 -AiSearchResourceId`. | [infra/foundry/](infra/foundry/), a pinned copy of the official [template 15](https://github.com/microsoft-foundry/foundry-samples/tree/main/infrastructure/infrastructure-setup-bicep/15-private-network-standard-agent-setup), parameterized by [infra/foundry.bicepparam](infra/foundry.bicepparam) |
 | Agent | Foundry Toolbox `learn-tools` with the Microsoft Learn MCP server, and hosted agent `jnj-azure-advisor` using Agent Framework and source-code deployment | [agent/](agent/) |
 | Publishing | Azure Bot Service resource with the Teams channel and public network access disabled | [infra/bot-service.bicep](infra/bot-service.bicep) |
+| APIM ingress (Option 2, optional) | API Management Developer tier, VNet-injected in External mode into `apim-subnet` `10.50.4.0/27`, with a keyless `m365-agents` API, a per-agent `validate-jwt` and rate-limit route, and gateway logs sent to Log Analytics | [infra/apim.bicep](infra/apim.bicep), [infra/apim-agent-route.bicep](infra/apim-agent-route.bicep) |
 
 ## Prerequisites
 
@@ -73,7 +90,15 @@ You don't need `azd` locally. It runs on the jumpbox inside the VNet.
 
 # 6. (Optional) Use the Foundry portal from your laptop: P2S VPN (Entra ID) + DNS Private Resolver
 ./scripts/setup-vpn.ps1   # then import .poc/vpn/azurevpnconfig.xml into Azure VPN Client and connect
+
+# 7. (Optional) Option 2 ingress: publish an agent through Azure API Management instead
+./scripts/deploy-apim.ps1                                    # once, ~45 minutes
+./scripts/create-prompt-agent.ps1 -AgentName jnj-advisor-apim-tenant   # or use any agent in the project
+./scripts/publish-agent.ps1 -AgentName jnj-advisor-apim-tenant -Ingress Apim -PublishScope Tenant `
+    -AgentDisplayName 'JNJ Azure Advisor - APIM'
 ```
+
+`publish-agent.ps1 -Ingress Apim` adds the agent's APIM route, which validates the JWT audience against the agent identity. It points the bot at APIM and keeps `enable_m365_public_endpoint=false`. Admin approval is the same as for Option 1.
 
 Then complete the governance steps:
 
@@ -102,7 +127,7 @@ In JNJ's environment, use an ExpressRoute- or VPN-connected workstation or an in
 
 ## Cost and cleanup
 
-The main running costs are Azure Firewall Basic, AI Search Standard, the jumpbox VM, and Cosmos DB. If you deploy laptop access, the VPN Gateway (`VpnGw1AZ`) and DNS Private Resolver inbound endpoint add roughly $320 per month. Model usage is pay-per-token. To stop the VM when you aren't demonstrating the solution, run:
+The main running costs are Azure Firewall Basic, AI Search Standard, the jumpbox VM, and Cosmos DB. The optional APIM Developer instance adds about $50 per month. If you deploy laptop access, the VPN Gateway (`VpnGw1AZ`) and DNS Private Resolver inbound endpoint add roughly $320 per month. Model usage is pay-per-token. To stop the VM when you aren't demonstrating the solution, run:
 
 ```powershell
 az vm deallocate -g rg-jnj-foundry-m365-poc -n vm-jnjm365-jumpbox
@@ -126,6 +151,8 @@ infra/foundry/             Pinned copy of foundry-samples template 15 (MIT)
 infra/foundry.bicepparam   POC parameters for template 15 (existing VNet, gpt-5.4-mini)
 infra/bot-service.bicep    Azure Bot Service for M365/Teams publishing
 infra/vpn.bicep            Optional P2S VPN (Entra ID) + DNS Private Resolver for laptop/portal access
+infra/apim.bicep           Optional APIM front door (Option 2 ingress), VNet-injected (External)
+infra/apim-agent-route.bicep  Per-agent APIM route: validate-jwt, rate limit, private forward
 scripts/                   Workstation orchestration (PowerShell 7)
 scripts/jumpbox/           Scripts executed inside the VNet via Run Command
 tools/demo-video/          Showcase video builder (ffmpeg + Azure AI Speech voiceover + branding)

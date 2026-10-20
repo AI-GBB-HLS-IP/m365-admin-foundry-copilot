@@ -1,7 +1,7 @@
-# Enables the source-IP-filtered public Activity Protocol route and publishes the agent to
-# Microsoft 365 Copilot and Teams. Runs on the jumpbox (inside the VNet) because the agent
-# management APIs remain private.
+# Configures the Activity Protocol route and publishes the agent to Microsoft 365 Copilot and
+# Teams. Runs on the jumpbox (inside the VNet) because the agent management APIs remain private.
 # Env: AZURE_AI_PROJECT_ENDPOINT, AGENT_NAME, BOT_SERVICE_ID, PUBLISH_SCOPE, APP_VERSION,
+#      M365_PUBLIC_ENDPOINT (true = Foundry ingress, false = APIM ingress),
 #      AGENT_DISPLAY_NAME, SHORT_DESCRIPTION, FULL_DESCRIPTION, DEVELOPER_NAME,
 #      DEVELOPER_URL, PRIVACY_URL, TERMS_URL, USER_TOKEN (protected)
 # Ref: https://learn.microsoft.com/azure/foundry/agents/how-to/publish-copilot-virtual-network
@@ -14,13 +14,15 @@ AGENT_URL="${AZURE_AI_PROJECT_ENDPOINT}/agents/${AGENT_NAME}"
 # Tenant scope pairs with BotServiceTenant; Shared/Personal pair with BotServiceRbac.
 if [ "$PUBLISH_SCOPE" = "Tenant" ]; then BOT_SCHEME=BotServiceTenant; else BOT_SCHEME=BotServiceRbac; fi
 
-echo "--- Step 3: enable Activity Protocol public route + ${BOT_SCHEME}"
+echo "--- Step 3: enable Activity Protocol (enable_m365_public_endpoint=${M365_PUBLIC_ENDPOINT:-true}) + ${BOT_SCHEME}"
 current=$(curl -sS --fail-with-body "${AGENT_URL}?api-version=v1" "${AUTH[@]}")
 # PATCH replaces protocol_configuration and authorization_schemes, so merge with what exists.
-patch=$(echo "$current" | jq --arg scheme "$BOT_SCHEME" '{
+# M365_PUBLIC_ENDPOINT=false is the APIM ingress option: APIM reaches the Activity route over the
+# private endpoint, so the source-IP-filtered public route stays off.
+patch=$(echo "$current" | jq --arg scheme "$BOT_SCHEME" --argjson pub "${M365_PUBLIC_ENDPOINT:-true}" '{
   agent_endpoint: {
     protocol_configuration: ((.agent_endpoint.protocol_configuration // {responses: {}})
-      + {activity: {enable_m365_public_endpoint: true}}),
+      + {activity: {enable_m365_public_endpoint: $pub}}),
     authorization_schemes: ((((.agent_endpoint.authorization_schemes // [{type: "Entra"}])
       | map(select(.type != "BotServiceRbac" and .type != "BotServiceTenant")))
       + [{type: $scheme}]) | unique_by(.type))

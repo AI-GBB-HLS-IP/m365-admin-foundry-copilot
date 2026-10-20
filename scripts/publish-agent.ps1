@@ -7,14 +7,22 @@
   Implements https://learn.microsoft.com/azure/foundry/agents/how-to/publish-copilot-virtual-network
     Step 1  Read the agent identity (jumpbox -> private endpoint)
     Step 2  Create the Azure Bot Service resource (workstation -> ARM management plane)
-    Step 3  Enable the source-IP-filtered Activity Protocol route + Bot Service auth scheme (jumpbox)
+    Step 3  Configure the Activity Protocol route + Bot Service auth scheme (jumpbox)
     Step 4  Publish to Microsoft 365 (jumpbox)
   Data-plane calls use the signed-in admin's short-lived token for https://ai.azure.com, passed
   to the jumpbox as an encrypted Run Command protected parameter.
+
+  Two ingress options for Microsoft 365 / Teams traffic:
+    -Ingress Foundry  (Option 1) Bot Service calls Foundry's source-IP-filtered public Activity
+                      route (enable_m365_public_endpoint = true). Documented Microsoft path.
+    -Ingress Apim     (Option 2) Bot Service calls the APIM gateway (scripts/deploy-apim.ps1),
+                      which validates the Bot Framework JWT and forwards over the private
+                      endpoint; Foundry stays fully private (enable_m365_public_endpoint = false).
 #>
 param(
     # Defaults to the POC hosted agent; pass another agent in the same project to publish it.
     [string] $AgentName = '',
+    [ValidateSet('Foundry', 'Apim')] [string] $Ingress = 'Foundry',
     [ValidateSet('Tenant', 'Shared')] [string] $PublishScope = 'Tenant',
     [string] $AppVersion = '1.0.0',
     [string] $AgentDisplayName = 'JNJ Azure Advisor',
@@ -48,11 +56,23 @@ $clientId = ([regex]::Match($out, 'AGENT_CLIENT_ID=([0-9a-fA-F-]{36})')).Groups[
 if (-not $clientId) { throw 'Could not read instance_identity.client_id for the agent.' }
 Write-Host "Agent identity client ID: $clientId"
 
-Write-Step 'Step 2: creating Azure Bot Service (public network access disabled, Teams channel)'
+Write-Step "Step 2: creating Azure Bot Service (public network access disabled, Teams channel; ingress=$Ingress)"
 $botName = "bot-$AgentName-$($state.accountName)"
-# api-version is required: without it the request doesn't match the source-IP-filtered Activity
-# route and is rejected by the account's public-network-access block (generic 403).
-$activityEndpoint = "$($state.projectEndpoint)/agents/$AgentName/endpoint/protocols/activityProtocol?api-version=v1"
+if ($Ingress -eq 'Apim') {
+    if (-not $state.apimName) { throw 'APIM not deployed. Run scripts/deploy-apim.ps1 first.' }
+    Write-Host "Adding APIM route for $AgentName (JWT audience $clientId)"
+    $route = Invoke-Az deployment group create --resource-group $state.resourceGroup --name "poc-apim-route-$AgentName" `
+        --template-file (Join-Path $script:RepoRoot 'infra/apim-agent-route.bicep') `
+        --parameters apimName=$($state.apimName) agentName=$AgentName agentClientId=$clientId tenantId=$($state.tenantId) `
+        --query properties.outputs --output json -Json
+    $activityEndpoint = $route.messagingEndpoint.value
+}
+else {
+    # api-version is required: without it the request doesn't match the source-IP-filtered Activity
+    # route and is rejected by the account's public-network-access block (generic 403).
+    $activityEndpoint = "$($state.projectEndpoint)/agents/$AgentName/endpoint/protocols/activityProtocol?api-version=v1"
+}
+Write-Host "Bot messaging endpoint: $activityEndpoint"
 $bot = Invoke-Az deployment group create --resource-group $state.resourceGroup --name "poc-bot-$AgentName" `
     --template-file (Join-Path $script:RepoRoot 'infra/bot-service.bicep') `
     --parameters botName=$botName displayName=$AgentDisplayName msaAppId=$clientId tenantId=$($state.tenantId) endpoint=$activityEndpoint `
@@ -64,6 +84,7 @@ Write-Step "Steps 3-4: enabling the Activity Protocol route and publishing (scop
 $publishEnv = $baseEnv + @{
     BOT_SERVICE_ID     = $botId
     PUBLISH_SCOPE      = $PublishScope
+    M365_PUBLIC_ENDPOINT = $(if ($Ingress -eq 'Apim') { 'false' } else { 'true' })
     APP_VERSION        = $AppVersion
     AGENT_DISPLAY_NAME = $AgentDisplayName
     SHORT_DESCRIPTION  = $ShortDescription

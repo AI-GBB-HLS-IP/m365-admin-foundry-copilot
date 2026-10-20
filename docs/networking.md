@@ -1,6 +1,9 @@
 # How this works: networking
 
-This POC runs a Microsoft Foundry hosted agent in a fully private Azure environment and publishes it to Microsoft 365 Copilot and Teams. The publish path uses the Foundry-managed, **source-IP-filtered Activity Protocol route** (`enable_m365_public_endpoint`). That route is the only path that Microsoft 365 can call; every other Foundry API remains private.
+This POC runs a Microsoft Foundry hosted agent in a fully private Azure environment and publishes it to Microsoft 365 Copilot and Teams. Microsoft 365 traffic can enter in one of two ways:
+
+- **Option 1, direct (default):** Bot Service calls Foundry's service-managed, **source-IP-filtered Activity Protocol route** (`enable_m365_public_endpoint=true`). That route is the only thing Microsoft 365 can call; every other Foundry API remains private. See [flow 1](#1-teams--microsoft-365-copilot--agent-inbound).
+- **Option 2, through Azure API Management:** Bot Service calls a customer-owned APIM gateway. APIM validates the token and forwards to the Activity route over the **private endpoint**, so `enable_m365_public_endpoint=false` and Foundry has no public route at all. See [Option 2](#option-2-teams--microsoft-365--apim--agent-inbound).
 
 ## Architecture
 
@@ -55,6 +58,7 @@ flowchart LR
 | `jumpbox-subnet` | `10.50.2.0/27` | Admin VM used for data-plane operations because the Foundry project rejects public callers. |
 | `AzureFirewallSubnet` | `10.50.3.0/26` | Azure Firewall Basic data plane. Private IP `10.50.3.4` is the next hop for `0.0.0.0/0`. |
 | `AzureFirewallManagementSubnet` | `10.50.3.64/26` | Required by Azure Firewall Basic for its management traffic. |
+| `apim-subnet` | `10.50.4.0/27` | Optional (Option 2). API Management in External VNet mode, with an NSG for the APIM management rules: inbound 443 Internet, 3443 ApiManagement, and 6390 AzureLoadBalancer; outbound Storage, Sql, AzureKeyVault, and AzureMonitor. |
 
 All subnets set `defaultOutboundAccess: false`, so internet egress is available only through the firewall route.
 
@@ -72,6 +76,58 @@ All subnets set `defaultOutboundAccess: false`, so internet egress is available 
 5. Foundry routes the authorized activity to the active agent version that runs in `agent-subnet`.
 
 No public IP, DNAT, load balancer, certificate, or inbound firewall rule exists in the customer VNet. The Activity route is a service-managed exception. Microsoft 365 doesn't support Private Link, so this is the documented way to reach a private-network agent from Microsoft 365.
+
+### Option 2: Teams / Microsoft 365 → APIM → agent (inbound)
+
+Option 2 replaces the Foundry-edge exception with a gateway that JNJ owns. The Foundry account has no public route at all; the only public entry point is the APIM gateway.
+
+```mermaid
+flowchart LR
+  U["Teams / M365 Copilot user"] --> BOT["Azure Bot Service<br/>endpoint = APIM URL"]
+  BOT -- "HTTPS + Bot Framework JWT" --> GW
+  subgraph SPOKE["Customer VNet 10.50.0.0/16"]
+    subgraph APIMSN["apim-subnet 10.50.4.0/27"]
+      GW["API Management (External VNet mode)<br/>validate-jwt, rate-limit, logs"]
+    end
+    PEF["PE: Foundry account 10.50.1.x"]
+    HA["Hosted / prompt agent"]
+  end
+  GW -- "private DNS + private endpoint<br/>Authorization header forwarded" --> PEF
+  PEF -- "Activity route<br/>(enable_m365_public_endpoint = false)" --> HA
+```
+
+1. Publishing is the same as Option 1: Tenant scope, `BotServiceTenant`, and M365 admin approval. The only difference is the Bot Service messaging endpoint, `https://apim-jnjm365.azure-api.net/m365/<agent>/activity`.
+2. The APIM per-agent operation ([apim-agent-route.bicep](../infra/apim-agent-route.bicep)) runs these steps:
+   - **`validate-jwt`:** Accepts only a Bot Framework or tenant-issued token whose audience is **this agent's identity client ID**. Anything else gets 401 at the gateway and never reaches Foundry.
+   - **`rate-limit`:** Defaults to 120 calls per minute per agent.
+   - **`rewrite-uri`:** Rewrites to `/<agent>/endpoint/protocols/activityProtocol?api-version=v1`.
+3. APIM resolves `<account>.services.ai.azure.com` through the VNet-linked private DNS zone and calls the **private endpoint**. Foundry logs these calls from `10.50.4.x`.
+4. APIM forwards the original `Authorization` header unchanged. Foundry therefore still validates the token and applies `BotServiceTenant`, as defense in depth.
+5. The reply goes back to Teams through the Bot Framework connector, the same as in Option 1.
+
+Bot Service can't send an APIM subscription key, so the API is keyless and **the JWT is the credential**. Each agent gets its own operation, audience, and rate limit, which means one APIM instance can front every published agent.
+
+**Evidence from this POC** (`jnj-advisor-apim-tenant`, Tenant scope, 2026-10-20):
+
+| Time (UTC) | Log | Source | Result |
+|---|---|---|---|
+| 01:21:04 | `ApiManagementGatewayLogs` | `52.112.113.207` (Teams) | 202, backend 202 |
+| 01:21:06 | Foundry `Projects_Wildcard_Post` | `10.50.4.x` (APIM subnet) | 202 |
+| 01:21:27 | Foundry `create_response` | (agent) | 200; the answer was shown in Teams |
+| (test) | APIM, with no token or a forged token | internet | 401 at APIM; Foundry never called |
+
+**Choosing an option**
+
+| Consideration | Option 1: Direct | Option 2: APIM |
+|---|---|---|
+| Foundry has any public route | Yes: the filtered Activity route | **No** |
+| Who controls the public entry point | Microsoft (Foundry edge) | **JNJ** (APIM policies, WAF, logs) |
+| Per-agent throttling or kill switch outside Foundry | No | **Yes** |
+| Fits a "no PaaS public endpoints" policy | Needs an exception | Standard "API gateway in the DMZ" pattern |
+| Moving parts and cost | Fewest | Plus APIM. For production use Premium or Standard v2 with VNet integration and availability zones; optionally put Application Gateway WAF in front. |
+| Documented by Microsoft Learn | Yes ([publish-copilot-virtual-network](https://learn.microsoft.com/azure/foundry/agents/how-to/publish-copilot-virtual-network)) | Composed pattern. Validated in this POC with Teams and both Tenant and Shared scope. |
+
+> **Production notes:** The APIM gateway is internet-facing, and scanners will probe it. Undefined paths return 404 and never reach Foundry. Use a custom domain and certificate. Consider restricting `apim-subnet` inbound 443 to the Bot Service and Microsoft 365 ranges after you validate the source ranges in your tenant; this POC observed `52.112.x` and `52.123.x`. Keep `api-version=v1` on the backend rewrite.
 
 ### 2. Agent → model, toolbox, and state (private)
 
@@ -143,7 +199,8 @@ Split tunneling is the default: only VNet traffic and DNS for those suffixes use
 | Endpoint | Exposure |
 |---|---|
 | Foundry account and project APIs (agents, responses, toolboxes, files) | **Private.** `publicNetworkAccess: Disabled`; public callers receive 403. |
-| Activity Protocol route for the published agent | **Public, filtered.** Only Bot Service and Microsoft 365 source ranges with a valid token and authorization scheme can call it. |
+| Activity Protocol route for the published agent | **Option 1: public, filtered.** Only Bot Service and Microsoft 365 source ranges with a valid token and authorization scheme can call it. **Option 2: off** (`enable_m365_public_endpoint=false`); reached only through the private endpoint. |
+| APIM gateway (Option 2 only) | **Public, policy-governed.** It requires a valid Bot Framework JWT for the agent's identity, is rate-limited, and logs to Log Analytics. |
 | Cosmos DB, AI Search, Storage | **Private.** Public network access is disabled. |
 | Application Insights ingestion | **Private** through AMPLS. |
 | Azure Bot Service resource | Microsoft-managed. `publicNetworkAccess: Disabled`; only the Teams channel is enabled. |
