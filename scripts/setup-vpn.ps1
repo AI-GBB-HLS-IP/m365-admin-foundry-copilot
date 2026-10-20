@@ -1,4 +1,3 @@
-#Requires -Version 7.0
 <#
 .SYNOPSIS
   Gives a developer laptop private access to the Foundry portal / data plane via P2S VPN.
@@ -9,6 +8,7 @@
      suffixes for the Foundry and dependency private-link names.
   3. Writes the profile to .poc/vpn/azurevpnconfig.xml for import into the Azure VPN Client.
 #>
+#Requires -Version 7.0
 param(
     [switch] $ProfileOnly,
     [ValidateSet('VpnGw1AZ', 'VpnGw2AZ', 'VpnGw3AZ')] [string] $GatewaySku = 'VpnGw1AZ',

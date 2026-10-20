@@ -1,4 +1,3 @@
-#Requires -Version 7.0
 <#
 .SYNOPSIS
   Deploys the private-network infrastructure for the JNJ Foundry -> M365/Teams POC.
@@ -13,6 +12,7 @@
   4. Grants data-plane roles to the jumpbox managed identity and to the signed-in user.
   5. Writes resolved names to .poc/state.json for the agent and publish scripts.
 #>
+#Requires -Version 7.0
 param(
     [string] $SubscriptionId = '92c57fed-c529-4815-97fc-ebabdc63137c',
     [string] $ResourceGroup = 'rg-jnj-foundry-m365-poc',

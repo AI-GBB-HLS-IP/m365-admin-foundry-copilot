@@ -1,4 +1,3 @@
-#Requires -Version 7.0
 <#
 .SYNOPSIS
   Deploys the hosted agent and its Microsoft Learn MCP toolbox from the private jumpbox.
@@ -9,6 +8,7 @@
   script ships agent/ to the jumpbox and runs azd there with the VM's managed identity, via
   Azure Run Command. Nothing is exposed inbound on the VM.
 #>
+#Requires -Version 7.0
 param(
     [string] $AzdEnvironment = 'poc'
 )

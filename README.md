@@ -18,7 +18,7 @@ Both options use the same private Foundry project, the same Tenant-scope publish
 | Public entry point | Foundry service edge (Microsoft-managed) | APIM gateway in the customer VNet (customer-managed) |
 | Customer-owned controls | Bot Service, M365 approval | Plus APIM `validate-jwt`, per-agent rate limits, gateway logs, and a per-agent kill switch |
 | Extra cost and effort | None | APIM (Developer about $50 per month for the POC; Premium for production), about 45 minutes to deploy |
-| Publish command | `publish-agent.ps1` | `deploy-apim.ps1` once, then `publish-agent.ps1 -Ingress Apim` |
+| Publish command | `publish-agent.ps1 -Ingress Foundry` (the default) | `deploy-apim.ps1` once, then `publish-agent.ps1 -Ingress Apim` |
 | POC agent | **JNJ Azure Advisor** (hosted agent) | **JNJ Azure Advisor - APIM** (`jnj-advisor-apim-tenant`) |
 
 Both options were tested end to end in Teams. See [docs/networking.md](docs/networking.md#option-2-teams--microsoft-365--apim--agent-inbound) for how to choose.
@@ -38,8 +38,10 @@ Both options were tested end to end in Teams. See [docs/networking.md](docs/netw
 ```mermaid
 flowchart LR
   T["Teams / M365 Copilot user"] --> B["Azure Bot Service"]
-  B -- "Activity Protocol only<br/>(source-IP filtered + token + tenant auth)" --> A
+  B -- "Option 1: Foundry direct<br/>filtered public Activity route<br/>(source IP + token + tenant auth)" --> A
+  B -- "Option 2: through APIM<br/>(JWT per agent + rate limit)" --> G
   subgraph VNET["Private VNet (East US 2)"]
+    G["API Management<br/>(apim-subnet)"] -- "private endpoint" --> A
     A["Hosted agent<br/>(agent-subnet, VNet-injected)"] -- PE --> F["Foundry: gpt-5.4-mini + Toolbox"]
     A -- PE --> D["Cosmos DB / AI Search / Storage"]
     A -- UDR --> FW["Azure Firewall<br/>FQDN allow-list"]
@@ -85,27 +87,41 @@ You don't need `azd` locally. It runs on the jumpbox inside the VNet.
 # 4. Create the pilot audience group used for governance
 ./scripts/create-pilot-group.ps1
 
-# 5. Publish to Microsoft 365 / Teams (Bot Service + public Activity route + Tenant-scope publish)
-./scripts/publish-agent.ps1 -PublishScope Tenant
+# 5. Publish to Microsoft 365 / Teams. CHOOSE ONE ingress option (see "Two ingress options"):
+
+# 5a. Option 1: Foundry direct (default). Bot Service -> Foundry's filtered public Activity route.
+./scripts/publish-agent.ps1 -Ingress Foundry -PublishScope Tenant
+
+# 5b. Option 2: through Azure API Management. Foundry keeps no public route.
+./scripts/deploy-apim.ps1                                              # once per environment, ~45 min
+./scripts/create-prompt-agent.ps1 -AgentName jnj-advisor-apim-tenant   # optional: or publish any existing agent
+./scripts/publish-agent.ps1 -AgentName jnj-advisor-apim-tenant -Ingress Apim -PublishScope Tenant `
+    -AgentDisplayName 'JNJ Azure Advisor - APIM'
 
 # 6. (Optional) Use the Foundry portal from your laptop: P2S VPN (Entra ID) + DNS Private Resolver
 ./scripts/setup-vpn.ps1   # then import .poc/vpn/azurevpnconfig.xml into Azure VPN Client and connect
-
-# 7. (Optional) Option 2 ingress: publish an agent through Azure API Management instead
-./scripts/deploy-apim.ps1                                    # once, ~45 minutes
-./scripts/create-prompt-agent.ps1 -AgentName jnj-advisor-apim-tenant   # or use any agent in the project
-./scripts/publish-agent.ps1 -AgentName jnj-advisor-apim-tenant -Ingress Apim -PublishScope Tenant `
-    -AgentDisplayName 'JNJ Azure Advisor - APIM'
 ```
 
-`publish-agent.ps1 -Ingress Apim` adds the agent's APIM route, which validates the JWT audience against the agent identity. It points the bot at APIM and keeps `enable_m365_public_endpoint=false`. Admin approval is the same as for Option 1.
+Run `Get-Help ./scripts/publish-agent.ps1 -Full` to see every parameter and example. The script prints the option it is using before it changes anything.
 
-Then complete the governance steps:
+| Script | Option 1 (Foundry direct) | Option 2 (APIM) |
+|---|---|---|
+| [deploy-apim.ps1](scripts/deploy-apim.ps1) | Not used | Run once per environment |
+| [publish-agent.ps1](scripts/publish-agent.ps1) | `-Ingress Foundry` (default) | `-Ingress Apim`. It also adds the agent's APIM route, which validates the token for that agent's identity and rate-limits it. |
+| [create-prompt-agent.ps1](scripts/create-prompt-agent.ps1) | Optional: creates a lightweight agent with the Learn MCP tool | Same |
 
-1. Open the [M365 admin center Requests page](https://admin.cloud.microsoft/?#/agents/all/requested) and select **JNJ Azure Advisor** > **Publish to store**.
-2. Set the audience to `sg-jnj-azure-advisor-pilot`.
-3. In the [Teams admin center](https://admin.teams.microsoft.com/), go to **Teams apps** > **Manage apps** > **JNJ Azure Advisor** > **Users and groups**, and add the same group.
-4. In Teams, open **Apps** > **Built by your org** > **JNJ Azure Advisor** and ask a question.
+Tips:
+
+- Use `-PublishScope Shared` for developer testing; it needs no admin approval. Use `Tenant` for anything other people will use.
+- If you don't pass `-AgentDisplayName`, the store name is the agent name, except for the main agent, which is "JNJ Azure Advisor".
+- Publish each agent with one option. To move an agent to the other option, rerun `publish-agent.ps1` with the other `-Ingress` and a higher `-AppVersion`. If you leave APIM, also delete the agent's operation in the `m365-agents` API. This POC tested each option on its own agents; it didn't test switching an existing agent.
+
+Then complete the governance steps. They are the same for both options:
+
+1. Open the [M365 admin center Requests page](https://admin.cloud.microsoft/?#/agents/all/requested) and select the agent, for example **JNJ Azure Advisor**, then **Publish to store**.
+2. Set the audience to `sg-jnj-azure-advisor-pilot` as **Available to**. Don't pre-install while testing, because users can't remove a pre-installed app to reset it.
+3. In the [Teams admin center](https://admin.teams.microsoft.com/), go to **Teams apps** > **Manage apps**, select the agent, then **Users and groups**, and add the same group.
+4. In Teams, open **Apps** > **Built by your org**, select the agent, and ask a question.
 
 See [docs/governance.md](docs/governance.md#demo-script-governance) for the full demo.
 

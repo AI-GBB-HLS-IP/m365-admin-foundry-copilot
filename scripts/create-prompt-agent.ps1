@@ -1,10 +1,14 @@
-#Requires -Version 7.0
 <#
 .SYNOPSIS
   Creates a prompt agent (same instructions and Microsoft Learn MCP tool as the hosted agent) in
   the private project. Used for side-by-side scenarios, for example the APIM ingress option and
-  the admin-approval demo, without changing the main hosted agent.
+  the admin-approval demo, without changing the main hosted agent. Works with either ingress option.
+
+.EXAMPLE
+  ./scripts/create-prompt-agent.ps1 -AgentName jnj-advisor-apim-tenant
+  ./scripts/publish-agent.ps1 -AgentName jnj-advisor-apim-tenant -Ingress Apim -PublishScope Tenant
 #>
+#Requires -Version 7.0
 param(
     [Parameter(Mandatory)] [string] $AgentName,
     [string] $Description = 'JNJ Azure Advisor (prompt agent) with the Microsoft Learn MCP tool'

@@ -1,9 +1,9 @@
-#Requires -Version 7.0
 <#
 .SYNOPSIS
   Creates the Entra security group used to scope who can install/use the agent
   (M365 admin center "Publish to store" audience and Teams app availability).
 #>
+#Requires -Version 7.0
 param(
     [string] $GroupName = 'sg-jnj-azure-advisor-pilot',
     [string[]] $MemberUpns = @()

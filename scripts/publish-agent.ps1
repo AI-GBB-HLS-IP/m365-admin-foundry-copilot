@@ -1,7 +1,7 @@
-#Requires -Version 7.0
 <#
 .SYNOPSIS
-  Publishes the private hosted agent to Microsoft 365 Copilot and Teams.
+  Publishes a private Foundry agent to Microsoft 365 Copilot and Teams, either directly from
+  Foundry (-Ingress Foundry, Option 1) or through Azure API Management (-Ingress Apim, Option 2).
 
 .DESCRIPTION
   Implements https://learn.microsoft.com/azure/foundry/agents/how-to/publish-copilot-virtual-network
@@ -12,20 +12,54 @@
   Data-plane calls use the signed-in admin's short-lived token for https://ai.azure.com, passed
   to the jumpbox as an encrypted Run Command protected parameter.
 
-  Two ingress options for Microsoft 365 / Teams traffic:
-    -Ingress Foundry  (Option 1) Bot Service calls Foundry's source-IP-filtered public Activity
-                      route (enable_m365_public_endpoint = true). Documented Microsoft path.
-    -Ingress Apim     (Option 2) Bot Service calls the APIM gateway (scripts/deploy-apim.ps1),
-                      which validates the Bot Framework JWT and forwards over the private
-                      endpoint; Foundry stays fully private (enable_m365_public_endpoint = false).
+  CHOOSE AN INGRESS OPTION (-Ingress). This is the only difference between the two paths:
+    -Ingress Foundry  (Option 1, default) Teams -> Bot Service -> Foundry's source-IP-filtered
+                      public Activity route (enable_m365_public_endpoint = true). No extra
+                      infrastructure. The documented Microsoft path.
+    -Ingress Apim     (Option 2) Teams -> Bot Service -> APIM gateway -> Foundry private endpoint.
+                      APIM validates the Bot Framework JWT per agent and rate-limits; Foundry keeps
+                      no public route (enable_m365_public_endpoint = false).
+                      Prerequisite: run scripts/deploy-apim.ps1 once per environment.
+
+  Admin approval (Tenant scope) is identical for both options. See README "Two ingress options".
+
+.PARAMETER AgentName
+  Foundry agent to publish. Defaults to the POC hosted agent (jnj-azure-advisor).
+
+.PARAMETER Ingress
+  Foundry (Option 1, default) or Apim (Option 2). See the description above.
+
+.PARAMETER PublishScope
+  Tenant: submits to the Microsoft 365 admin center for approval (BotServiceTenant).
+  Shared: no approval; callers also need Foundry RBAC on the project (BotServiceRbac). Use for dev/test.
+
+.PARAMETER AppVersion
+  Teams app version. Increase it when you republish changed metadata (shows as Pending update).
+
+.PARAMETER AgentDisplayName
+  Name users see in Teams and Copilot. Defaults to 'JNJ Azure Advisor' for the main agent and to
+  -AgentName for any other agent, so two agents never share a store name by accident.
+
+.EXAMPLE
+  ./scripts/publish-agent.ps1 -PublishScope Tenant
+  Option 1: publish the main hosted agent directly from Foundry to Teams and Microsoft 365 Copilot.
+
+.EXAMPLE
+  ./scripts/deploy-apim.ps1
+  ./scripts/publish-agent.ps1 -AgentName jnj-advisor-apim-tenant -Ingress Apim -PublishScope Tenant -AgentDisplayName 'JNJ Azure Advisor - APIM'
+  Option 2: deploy APIM once, then publish an agent through it.
+
+.EXAMPLE
+  ./scripts/publish-agent.ps1 -AgentName my-test-agent -Ingress Apim -PublishScope Shared
+  Developer test through APIM without admin approval.
 #>
+#Requires -Version 7.0
 param(
-    # Defaults to the POC hosted agent; pass another agent in the same project to publish it.
     [string] $AgentName = '',
     [ValidateSet('Foundry', 'Apim')] [string] $Ingress = 'Foundry',
     [ValidateSet('Tenant', 'Shared')] [string] $PublishScope = 'Tenant',
     [string] $AppVersion = '1.0.0',
-    [string] $AgentDisplayName = 'JNJ Azure Advisor',
+    [string] $AgentDisplayName = '',
     [string] $ShortDescription = 'Private Foundry agent grounded in Microsoft Learn',
     [string] $FullDescription = 'POC: a Microsoft Foundry hosted agent running in a private network that answers Azure, Foundry, and Microsoft 365 questions using the Microsoft Learn MCP server.',
     [string] $DeveloperName = 'JNJ AI Platform (POC)',
@@ -39,6 +73,20 @@ $state = Get-PocState
 Invoke-Az account set --subscription $state.subscriptionId | Out-Null
 $isMainAgent = [string]::IsNullOrEmpty($AgentName) -or $AgentName -eq $state.agentName
 if ([string]::IsNullOrEmpty($AgentName)) { $AgentName = $state.agentName }
+if ([string]::IsNullOrEmpty($AgentDisplayName)) {
+    $AgentDisplayName = if ($isMainAgent) { 'JNJ Azure Advisor' } else { $AgentName }
+}
+if ($Ingress -eq 'Apim' -and -not $state.ContainsKey('apimName')) {
+    throw 'Option 2 (-Ingress Apim) needs API Management. Run ./scripts/deploy-apim.ps1 first, or use -Ingress Foundry.'
+}
+
+$ingressText = if ($Ingress -eq 'Apim') {
+    'Option 2: Teams -> Bot Service -> APIM -> Foundry private endpoint (Foundry public route OFF)'
+} else {
+    'Option 1: Teams -> Bot Service -> Foundry filtered public Activity route (Foundry public route ON)'
+}
+Write-Host "Publishing '$AgentDisplayName' (agent $AgentName, scope $PublishScope)" -ForegroundColor Green
+Write-Host "Ingress: $ingressText" -ForegroundColor Green
 
 function Get-UserToken {
     (Invoke-Az account get-access-token --resource https://ai.azure.com --query accessToken --output tsv).Trim()
@@ -59,7 +107,6 @@ Write-Host "Agent identity client ID: $clientId"
 Write-Step "Step 2: creating Azure Bot Service (public network access disabled, Teams channel; ingress=$Ingress)"
 $botName = "bot-$AgentName-$($state.accountName)"
 if ($Ingress -eq 'Apim') {
-    if (-not $state.apimName) { throw 'APIM not deployed. Run scripts/deploy-apim.ps1 first.' }
     Write-Host "Adding APIM route for $AgentName (JWT audience $clientId)"
     $route = Invoke-Az deployment group create --resource-group $state.resourceGroup --name "poc-apim-route-$AgentName" `
         --template-file (Join-Path $script:RepoRoot 'infra/apim-agent-route.bicep') `
@@ -108,4 +155,6 @@ if ($isMainAgent) {
 if ($PublishScope -eq 'Tenant') {
     Write-Step 'Next: approve the agent in the Microsoft 365 admin center'
     Write-Host 'https://admin.cloud.microsoft/?#/agents/all/requested'
+    Write-Host "Approve '$AgentDisplayName' for a group as 'Available to' (avoid pre-installing while testing),"
+    Write-Host 'then allow the same group in Teams admin center > Teams apps > Manage apps > Users and groups.'
 }

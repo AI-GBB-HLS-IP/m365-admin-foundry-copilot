@@ -1,13 +1,20 @@
-#Requires -Version 7.0
 <#
 .SYNOPSIS
   Deploys the optional API Management front door (Option 2 ingress) into the POC spoke VNet.
 
 .DESCRIPTION
   APIM Developer tier, VNet-injected in External mode (public gateway, private reach into the
-  Foundry private endpoint). Takes ~45-60 minutes. Agent routes are added later by
-  scripts/publish-agent.ps1 -Ingress Apim.
+  Foundry private endpoint). Takes ~45-60 minutes.
+
+  This is the one-time prerequisite for Option 2 ingress only. Option 1 (publish-agent.ps1
+  -Ingress Foundry, the default) doesn't need it. After it finishes, publish any agent through
+  APIM with:
+    ./scripts/publish-agent.ps1 -AgentName <agent> -Ingress Apim -PublishScope Tenant
+
+.EXAMPLE
+  ./scripts/deploy-apim.ps1
 #>
+#Requires -Version 7.0
 param(
     [string] $PublisherEmail = ''
 )

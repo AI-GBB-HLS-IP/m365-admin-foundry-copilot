@@ -1,9 +1,9 @@
-#Requires -Version 7.0
 <#
 .SYNOPSIS
   Proves the isolation boundary: public callers are blocked, VNet callers resolve private IPs,
   and agent egress is governed by Azure Firewall.
 #>
+#Requires -Version 7.0
 . (Join-Path $PSScriptRoot 'common.ps1')
 $state = Get-PocState
 Invoke-Az account set --subscription $state.subscriptionId | Out-Null
